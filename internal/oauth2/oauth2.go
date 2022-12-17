@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -296,14 +297,38 @@ func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, addr 
 	return request, err
 }
 
+// https://github.com/golang/oauth2/blob/master/internal/token.go#L75
+
+type expirationTime int64
+
+func (e *expirationTime) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	var n json.Number
+	err := json.Unmarshal(b, &n)
+	if err != nil {
+		return err
+	}
+	i, err := n.Int64()
+	if err != nil {
+		return err
+	}
+	if i > math.MaxInt64 {
+		i = math.MaxInt64
+	}
+	*e = expirationTime(i)
+	return nil
+}
+
 type TokenResponse struct {
-	AccessToken     string `json:"access_token,omitempty"`
-	ExpiresIn       int64  `json:"expires_in,omitempty"`
-	IDToken         string `json:"id_token,omitempty"`
-	IssuedTokenType string `json:"issued_token_type,omitempty"`
-	RefreshToken    string `json:"refresh_token,omitempty"`
-	Scope           string `json:"scope,omitempty"`
-	TokenType       string `json:"token_type,omitempty"`
+	AccessToken     string         `json:"access_token,omitempty"`
+	ExpiresIn       expirationTime `json:"expires_in,omitempty"` // azure + paypal ? return strings
+	IDToken         string         `json:"id_token,omitempty"`
+	IssuedTokenType string         `json:"issued_token_type,omitempty"`
+	RefreshToken    string         `json:"refresh_token,omitempty"`
+	Scope           string         `json:"scope,omitempty"`
+	TokenType       string         `json:"token_type,omitempty"`
 }
 
 func NewTokenResponseFromForm(f url.Values) TokenResponse {
@@ -311,7 +336,7 @@ func NewTokenResponseFromForm(f url.Values) TokenResponse {
 
 	return TokenResponse{
 		AccessToken:     f.Get("access_token"),
-		ExpiresIn:       expiresIn,
+		ExpiresIn:       expirationTime(expiresIn),
 		IDToken:         f.Get("id_token"),
 		IssuedTokenType: f.Get("issued_token_type"),
 		RefreshToken:    f.Get("refresh_token"),
